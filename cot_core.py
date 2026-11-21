@@ -143,7 +143,7 @@ def pair_lean(base, quote):
         label = signal(o["net"], o["idx"])[0]
         if label.startswith("EXTREME"):
             notes.append("%s is at an %s: a crowded trade, so reversals can be sharp." % (o["tick"], label.lower()))
-    return dict(lean=lean, text=text, gap=gap, notes=notes)
+    return dict(lean=lean, text=text, gap=gap, notes=notes, strength=strength)
 
 
 def verdict(lean, trend):
@@ -158,3 +158,22 @@ def verdict(lean, trend):
     if trend == "Sideways":
         return "Your chart is sideways, so the COT lean has no trend support yet."
     return "Conflict: COT leans %s but your chart trend is %s. Wait for more confirmation." % (lean["lean"], trend.lower())
+
+
+def commercial_note(spec, com):
+    """spec and com are pair_lean() results for the Large Speculators and the Commercials."""
+    if com["lean"] == "NONE":
+        return "Commercials: no clear lean."
+    said = "%s (%s)" % (com["lean"].lower(), com["strength"])
+    if spec["lean"] == "NONE":
+        return "Commercials lean %s." % said
+    if spec["lean"] == com["lean"]:
+        return "Commercials agree: they also lean %s." % said
+    note = "Commercials lean the other way: %s. This is common, since they hedge." % said
+    if abs(com["gap"]) >= LEAN_STRONG and abs(spec["gap"]) >= LEAN_STRONG:
+        note += " Both groups are stretched on opposite sides, which some traders read as a sign the move is stretched."
+    return note
+
+
+def commercial_short(com):
+    return "Commercials: no clear lean" if com["lean"] == "NONE" else "Commercials lean %s" % com["lean"].lower()

@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from cot_core import (CATEGORIES, GROUPS, PAIRS, download, group_by_code, index_at, nets_for, pair_lean,
-                      signal, summarise, verdict)
+                      signal, summarise, verdict, commercial_note)
 
 st.set_page_config(page_title="COT Tracker", layout="wide")
 
@@ -111,10 +111,12 @@ except Exception as e:
     st.error("Could not get the data from the CFTC. Try Refresh in a minute. Details: %s" % e)
     st.stop()
 
-by_tick = {}
+by_tick, com_tick = {}, {}
 for _cat, _ms in CATEGORIES.items():
     for _o in summarise(by, _ms, "Large Speculators", lookback)[0]:
         by_tick[_o["tick"]] = _o
+    for _o in summarise(by, _ms, "Commercials", lookback)[0]:
+        com_tick[_o["tick"]] = _o
 
 st.markdown("### My pairs")
 st.caption("Weekly lean from the Large Speculators' COT Index, plus your own daily chart check. "
@@ -133,6 +135,8 @@ for col, (pname, b, q) in zip(st.columns(len(PAIRS)), PAIRS):
             q, by_tick[q]["idx"], "long" if by_tick[q]["net"] > 0 else "short")
         for n in lean["notes"]:
             html += '<div class="pn">Note: %s</div>' % n
+        if b in com_tick and q in com_tick:
+            html += '<div class="pn">%s</div>' % commercial_note(lean, pair_lean(com_tick[b], com_tick[q]))
         html += '<div class="pv">%s</div></div>' % verdict(lean, trend)
         st.markdown(html, unsafe_allow_html=True)
 

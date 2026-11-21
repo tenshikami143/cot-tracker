@@ -153,7 +153,8 @@ This is the section near the top with four cards, one for each of your pairs: EU
    - It is **weak** when both net positions go against the lean.
 3. **An index line**, for example: EUR index 4 (net short) vs USD index 76 (net long).
 4. **Notes.** These warn about crowded trades, or say something like 'GOLD is still net long, so the sell lean is only partly supported'.
-5. **A menu called 'chart trend today'.** This is the daily part.
+5. **A Commercials line.** It says whether the Commercials lean the same way, the other way, or have no clear lean. Leaning the other way is common, since they hedge. It matters most when both groups are stretched on opposite sides.
+6. **A menu called 'chart trend today'.** This is the daily part.
 
 #### The daily part
 
