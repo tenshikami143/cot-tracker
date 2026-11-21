@@ -4,7 +4,8 @@ import io
 import pandas as pd
 import streamlit as st
 
-from cot_core import CATEGORIES, GROUPS, download, group_by_code, index_at, nets_for, signal, summarise
+from cot_core import (CATEGORIES, GROUPS, PAIRS, download, group_by_code, index_at, nets_for, pair_lean,
+                      signal, summarise, verdict)
 
 st.set_page_config(page_title="COT Tracker", layout="wide")
 
@@ -27,6 +28,9 @@ table.cot th:first-child,table.cot td:first-child{text-align:left}
 .ex{background:rgba(245,185,66,.18);color:#f5b942}
 .be{background:rgba(255,107,107,.18);color:#ff6b6b}
 .bu{background:rgba(62,207,142,.18);color:#3ecf8e}
+.pc{background:#142447;border:1px solid #233763;border-radius:12px;padding:14px;margin-top:6px;color:#e6ecfa}
+.pn{color:#8fa2c8;font-size:13px;margin-top:8px}
+.pv{margin-top:10px;font-size:14px;border-top:1px solid #233763;padding-top:8px}
 </style>
 """
 
@@ -98,6 +102,29 @@ try:
 except Exception as e:
     st.error("Could not get the data from the CFTC. Try Refresh in a minute. Details: %s" % e)
     st.stop()
+
+by_tick = {}
+for _cat, _ms in CATEGORIES.items():
+    for _o in summarise(by, _ms, "Large Speculators", lookback)[0]:
+        by_tick[_o["tick"]] = _o
+
+st.markdown("### My pairs")
+st.caption("Weekly lean from the Large Speculators' COT Index, plus your own daily chart check. "
+           "One indicator among others, not advice. Edit PAIRS in cot_core.py to change the pairs.")
+for col, (pname, b, q) in zip(st.columns(len(PAIRS)), PAIRS):
+    with col:
+        trend = st.selectbox("%s chart trend today" % pname, ["Not set", "Up", "Down", "Sideways"], key="trend_" + pname)
+        if b not in by_tick or q not in by_tick:
+            st.warning("No COT data for %s." % pname)
+            continue
+        lean = pair_lean(by_tick[b], by_tick[q])
+        cls = "bu" if lean["lean"] == "BUY" else "be" if lean["lean"] == "SELL" else "ex"
+        html = '<div class="pc"><b>%s</b> <span class="tag %s">%s</span>' % (pname, cls, lean["text"])
+        html += '<div class="pn">%s index %d vs %s index %d</div>' % (b, by_tick[b]["idx"], q, by_tick[q]["idx"])
+        for n in lean["notes"]:
+            html += '<div class="pn">Note: %s</div>' % n
+        html += '<div class="pv">%s</div></div>' % verdict(lean, trend)
+        st.markdown(html, unsafe_allow_html=True)
 
 all_rows, all_missing, as_of = [], [], ""
 tabs = st.tabs(list(CATEGORIES))

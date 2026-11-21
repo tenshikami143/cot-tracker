@@ -105,3 +105,43 @@ def summarise(by, markets, group, lookback):
             lp=round(L / (L + S) * 100) if L + S else 0, idx=index_at(n, i, lookback),
             prev_net=n[i - 1], prev_idx=index_at(n, i - 1, lookback), date=w[-1]["report_date_as_yyyy_mm_dd"][:10]))
     return out, missing
+
+
+# ---- Pair lean (used by the "My pairs" section and the Discord alert) ----
+# Edit this list to change your pairs: (pair name, base ticker, quote ticker). Tickers come from CATEGORIES above.
+PAIRS = [
+    ("EUR/USD", "EUR", "USD"),
+    ("USD/JPY", "USD", "JPY"),
+    ("GBP/USD", "GBP", "USD"),
+    ("XAU/USD", "GOLD", "USD"),
+]
+LEAN_MIN = 30     # COT Index gap needed before there is a lean
+LEAN_STRONG = 60  # gap needed for a "strong" lean
+
+
+def pair_lean(base, quote):
+    """base and quote are rows from summarise(). The lean compares where each currency sits in its own range."""
+    gap = base["idx"] - quote["idx"]
+    lean = "BUY" if gap >= LEAN_MIN else "SELL" if gap <= -LEAN_MIN else "NONE"
+    strength = "strong" if abs(gap) >= LEAN_STRONG else "moderate"
+    text = "NO CLEAR LEAN" if lean == "NONE" else "LEAN %s (%s)" % (lean, strength)
+    notes = []
+    for o in (base, quote):
+        label = signal(o["net"], o["idx"])[0]
+        if label.startswith("EXTREME"):
+            notes.append("%s is at an %s: a crowded trade, so reversals can be sharp." % (o["tick"], label.lower()))
+    return dict(lean=lean, text=text, gap=gap, notes=notes)
+
+
+def verdict(lean, trend):
+    """Combines the weekly COT lean with the trend the user reads from their own daily chart."""
+    if trend == "Not set":
+        return "Pick today's chart trend above to compare it with the COT lean."
+    if lean["lean"] == "NONE":
+        return "COT has no clear lean here. Rely on your other indicators."
+    want = "Up" if lean["lean"] == "BUY" else "Down"
+    if trend == want:
+        return "Aligned: COT and your chart agree (%s bias)." % lean["lean"]
+    if trend == "Sideways":
+        return "Your chart is sideways, so the COT lean has no trend support yet."
+    return "Conflict: COT leans %s but your chart trend is %s. Wait for more confirmation." % (lean["lean"], trend.lower())

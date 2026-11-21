@@ -8,7 +8,7 @@ import os
 import sys
 import urllib.request
 
-from cot_core import CATEGORIES, download, group_by_code, signal, summarise
+from cot_core import CATEGORIES, PAIRS, download, group_by_code, pair_lean, signal, summarise
 
 APP_LINK = "https://gm-cot-tracker.streamlit.app"
 LOOKBACK = 52
@@ -17,13 +17,14 @@ GROUP = "Large Speculators"
 
 def build_message():
     by = group_by_code(download())
-    sections, as_of = [], ""
+    sections, as_of, by_tick = [], "", {}
     for cat, markets in CATEGORIES.items():
         data, _ = summarise(by, markets, GROUP, LOOKBACK)
         com = {c["tick"]: c for c in summarise(by, markets, "Commercials", LOOKBACK)[0]}
         lines, left = [], []
         for o in data:
             as_of = o["date"]
+            by_tick[o["tick"]] = o
             now = signal(o["net"], o["idx"])[0]
             before = signal(o["prev_net"], o["prev_idx"])[0]
             if now.startswith("EXTREME"):
@@ -42,6 +43,12 @@ def build_message():
         raise RuntimeError("The CFTC sent no usable data.")
     head = "**COT update** - %s, positions as of %s" % (GROUP, as_of)
     body = "\n\n".join(sections) if sections else "No markets at an extreme this week."
+    pair_lines = []
+    for name, b, q in PAIRS:
+        if b in by_tick and q in by_tick:
+            pair_lines.append("%s: %s" % (name, pair_lean(by_tick[b], by_tick[q])["text"]))
+    if pair_lines:
+        body = "**My pairs (weekly lean)**\n" + "\n".join(pair_lines) + "\n\n" + body
     return head + "\n\n" + body + "\n\n<%s>" % APP_LINK
 
 
