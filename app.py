@@ -1,39 +1,17 @@
-import json
-import urllib.parse
-import urllib.request
-from datetime import date, timedelta
+import csv
+import io
 
+import pandas as pd
 import streamlit as st
 
+from cot_core import CATEGORIES, GROUPS, download, group_by_code, index_at, nets_for, signal, summarise
+
 st.set_page_config(page_title="COT Tracker", layout="wide")
-
-URL = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"  # CFTC Legacy, futures only
-EXTREME_LEVEL = 10  # index <= 10 or >= 90 counts as extreme
-
-MARKETS = [
-    ("EUR", "Euro", "099741"),
-    ("GBP", "British Pound", "096742"),
-    ("JPY", "Japanese Yen", "097741"),
-    ("CHF", "Swiss Franc", "092741"),
-    ("CAD", "Canadian Dollar", "090741"),
-    ("AUD", "Australian Dollar", "232741"),
-    ("NZD", "New Zealand Dollar", "112741"),
-    ("MXN", "Mexican Peso", "095741"),
-    ("ZAR", "South African Rand", "122741"),
-]
-
-GROUPS = {
-    "Large Speculators": ("noncomm_positions_long_all", "noncomm_positions_short_all"),
-    "Commercials": ("comm_positions_long_all", "comm_positions_short_all"),
-    "Small Traders": ("nonrept_positions_long_all", "nonrept_positions_short_all"),
-}
-
-FIELDS = ["report_date_as_yyyy_mm_dd", "cftc_contract_market_code"] + [f for g in GROUPS.values() for f in g]
 
 CSS = """
 <style>
 .stApp{background:#0e1a33}
-.stApp, .stApp label, .stApp p, .stApp h1{color:#e6ecfa}
+.stApp, .stApp label, .stApp p, .stApp h1, .stApp h3{color:#e6ecfa}
 .cot-wrap{background:#142447;border:1px solid #233763;border-radius:12px;padding:6px 14px;overflow-x:auto}
 table.cot{border-collapse:collapse;width:100%;min-width:900px;font-variant-numeric:tabular-nums}
 table.cot th{color:#8fa2c8;font-size:12px;text-align:right;padding:12px 8px;border-bottom:1px solid #233763;letter-spacing:.06em}
@@ -52,28 +30,12 @@ table.cot th:first-child,table.cot td:first-child{text-align:left}
 </style>
 """
 
+SORTS = ["Default order", "COT Index: lowest first", "COT Index: highest first", "Biggest weekly change"]
+
 
 @st.cache_data(ttl=6 * 3600, show_spinner="Downloading from the CFTC...")
-def download():
-    codes = ",".join("'%s'" % m[2] for m in MARKETS)
-    start = (date.today() - timedelta(days=170 * 7)).isoformat()
-    params = {
-        "$select": ",".join(FIELDS),
-        "$where": "cftc_contract_market_code in(%s) AND report_date_as_yyyy_mm_dd >= '%sT00:00:00.000'" % (codes, start),
-        "$order": "report_date_as_yyyy_mm_dd",
-        "$limit": "5000",
-    }
-    req = urllib.request.Request(URL + "?" + urllib.parse.urlencode(params), headers={"User-Agent": "Mozilla/5.0 COT-tracker"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def signal(net, index):
-    if index <= EXTREME_LEVEL and net < 0:
-        return "EXTREME SHORT", "ex"
-    if index >= 100 - EXTREME_LEVEL and net > 0:
-        return "EXTREME LONG", "ex"
-    return ("BULLISH", "bu") if net >= 0 else ("BEARISH", "be")
+def get_rows():
+    return download()
 
 
 def num(n, plus=False):
@@ -87,26 +49,17 @@ def colored(n):
     return '<span class="%s">%s</span>' % ("r" if n < 0 else "g", num(n, True))
 
 
-def build(rows, group, lookback):
-    lk, sk = GROUPS[group]
-    by = {}
-    for r in rows:
-        by.setdefault(r["cftc_contract_market_code"], []).append(r)
-    out = []
-    for tick, name, code in MARKETS:
-        w = sorted(by.get(code, []), key=lambda x: x["report_date_as_yyyy_mm_dd"])
-        if len(w) < 2:
-            continue
-        nets = [int(x[lk]) - int(x[sk]) for x in w]
-        recent = nets[-lookback:]
-        lo, hi = min(recent), max(recent)
-        idx = round((nets[-1] - lo) / (hi - lo) * 100) if hi != lo else 50
-        L, S = int(w[-1][lk]), int(w[-1][sk])
-        pL, pS = int(w[-2][lk]), int(w[-2][sk])
-        out.append(dict(tick=tick, name=name, L=L, S=S, dL=L - pL, dS=S - pS, net=nets[-1],
-                        wk=nets[-1] - nets[-2], lp=round(L / (L + S) * 100) if L + S else 0,
-                        idx=idx, date=w[-1]["report_date_as_yyyy_mm_dd"][:10]))
-    return out
+def arrange(data, sort, only_extreme):
+    view = list(data)
+    if only_extreme:
+        view = [o for o in view if signal(o["net"], o["idx"])[0].startswith("EXTREME")]
+    if sort == SORTS[1]:
+        view.sort(key=lambda o: o["idx"])
+    elif sort == SORTS[2]:
+        view.sort(key=lambda o: -o["idx"])
+    elif sort == SORTS[3]:
+        view.sort(key=lambda o: -abs(o["wk"]))
+    return view
 
 
 def table_html(data):
@@ -130,27 +83,61 @@ def table_html(data):
 st.markdown(CSS, unsafe_allow_html=True)
 st.title("COT Tracker")
 
-c1, c2, c3 = st.columns([3, 1.4, 1])
+c1, c2, c3, c4, c5 = st.columns([3, 1.3, 1.6, 1.2, 0.8])
 group = c1.radio("Who are we looking at?", list(GROUPS), horizontal=True)
-lookback = c2.selectbox("COT Index looks back (weeks)", [26, 52, 104, 156], index=1)
-c3.write("")
-if c3.button("Refresh"):
+lookback = c2.selectbox("Index looks back (weeks)", [26, 52, 104, 156], index=1)
+sort = c3.selectbox("Sort by", SORTS)
+only_extreme = c4.checkbox("Extremes only")
+c5.write("")
+if c5.button("Refresh"):
     st.cache_data.clear()
     st.rerun()
 
 try:
-    rows = download()
-    data = build(rows, group, lookback)
+    by = group_by_code(get_rows())
 except Exception as e:
     st.error("Could not get the data from the CFTC. Try Refresh in a minute. Details: %s" % e)
     st.stop()
 
-if not data:
-    st.warning("The CFTC sent no data. Try Refresh.")
-    st.stop()
+all_rows, all_missing, as_of = [], [], ""
+tabs = st.tabs(list(CATEGORIES))
+for tab, (cat, markets) in zip(tabs, CATEGORIES.items()):
+    with tab:
+        data, missing = summarise(by, markets, group, lookback)
+        all_missing += missing
+        all_rows += [(cat, o) for o in data]
+        if data:
+            as_of = data[0]["date"]
+        view = arrange(data, sort, only_extreme)
+        if view:
+            st.markdown(table_html(view), unsafe_allow_html=True)
+        else:
+            st.info("Nothing at an extreme in this tab right now." if data else "No data came back for this tab.")
 
-st.caption("Forex · %s · Positions as of %s (a Tuesday; the CFTC publishes on Fridays)" % (group, data[0]["date"]))
-st.markdown(table_html(data), unsafe_allow_html=True)
+st.caption("%s · Positions as of %s (a Tuesday; the CFTC publishes on Fridays)" % (group, as_of))
+if all_missing:
+    st.warning("No data found for: %s. The CFTC code for these may need fixing. Tell Claude." % ", ".join(all_missing))
+
+buf = io.StringIO()
+w = csv.writer(buf)
+w.writerow(["tab", "market", "group", "positions_as_of", "long", "short", "net", "weekly_change", "long_pct", "cot_index", "signal"])
+for cat, o in all_rows:
+    w.writerow([cat, o["tick"], group, o["date"], o["L"], o["S"], o["net"], o["wk"], o["lp"], o["idx"], signal(o["net"], o["idx"])[0]])
+st.download_button("Download all tabs as CSV", buf.getvalue(), "cot_%s.csv" % group.replace(" ", "_"), "text/csv")
+
+st.markdown("### Look closer")
+flat = [(cat, m) for cat, ms in CATEGORIES.items() for m in ms if m[2] in by]
+labels = ["%s - %s" % (m[0], m[1]) for _, m in flat]
+if labels:
+    pick = st.selectbox("Pick a market to see its history", labels)
+    weeks = by[flat[labels.index(pick)][1][2]]
+    dates = pd.to_datetime([x["report_date_as_yyyy_mm_dd"][:10] for x in weeks])
+    st.caption("Net position over time (Long minus Short) for all three groups")
+    st.line_chart(pd.DataFrame({g: nets_for(weeks, g) for g in GROUPS}, index=dates))
+    n = nets_for(weeks, group)
+    st.caption("COT Index over time for %s (0 = most bearish, 100 = most bullish)" % group)
+    st.line_chart(pd.DataFrame({"COT Index": [index_at(n, i, lookback) for i in range(len(n))]}, index=dates))
+
 st.caption("Net = Long minus Short. Weekly change = how much Net moved since last week. "
            "COT Index: 0 = most bearish in the lookback period, 100 = most bullish. "
            "This is information, not trading advice.")
