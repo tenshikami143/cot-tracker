@@ -1,6 +1,7 @@
 """Shared by app.py (the web page) and alert.py (the Discord message).
 To add a market later, add one line to CATEGORIES below: (short name, full name, CFTC code)."""
 import json
+import math
 import urllib.parse
 import urllib.request
 from datetime import date, timedelta
@@ -177,3 +178,23 @@ def commercial_note(spec, com):
 
 def commercial_short(com):
     return "Commercials: no clear lean" if com["lean"] == "NONE" else "Commercials lean %s" % com["lean"].lower()
+
+
+# ---- Position size calculator (USD account) ----
+def pip_value_per_lot(pair, price=None, contract=100):
+    """Money value, in USD, of one pip (one dollar of price for gold) for 1.00 standard lot."""
+    if pair in ("EUR/USD", "GBP/USD"):
+        return 10.0
+    if pair == "USD/JPY":
+        return 1000.0 / price  # one pip is 1,000 yen per lot, converted to USD at the current price
+    if pair == "XAU/USD":
+        return float(contract)  # one dollar of price move times ounces per lot
+    raise ValueError("Unknown pair")
+
+
+def position_size(balance, risk_pct, pair, stop, price=None, contract=100):
+    risk_amount = balance * risk_pct / 100.0
+    pv = pip_value_per_lot(pair, price, contract)
+    lots = math.floor(risk_amount / (stop * pv) * 100) / 100.0  # rounded down to 0.01
+    return dict(risk_amount=risk_amount, pip_value=pv, lots=lots,
+                actual_risk=lots * stop * pv, min_lot_risk=0.01 * stop * pv)

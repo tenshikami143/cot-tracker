@@ -194,6 +194,12 @@ At the bottom of the page, pick any market to see two charts: its net position o
 
 The button saves the table as a spreadsheet file you can open in Excel or Google Sheets.
 
+### Position size calculator
+
+Open the box called **Position size calculator** near the top of the page. Type your account balance, the percentage you are willing to risk, the pair, and how far away your stop-loss is (in pips, or in dollars for gold). It tells you the lot size that keeps your loss at or under your limit if the stop is hit.
+
+Example: a 2,000 USD account, 2% risk, EUR/USD, 40-pip stop. The money at risk is 40 USD, one lot is worth about 10 USD per pip, so the size is **0.10 lots**. A wider stop means a smaller size.
+
 ### The Friday Discord alert
 
 Every Friday, shortly after the report comes out, your COT Alerts Discord server gets a message with:

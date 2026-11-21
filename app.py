@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from cot_core import (CATEGORIES, GROUPS, PAIRS, download, group_by_code, index_at, nets_for, pair_lean,
-                      signal, summarise, verdict, commercial_note)
+                      signal, summarise, verdict, commercial_note, position_size)
 
 st.set_page_config(page_title="COT Tracker", layout="wide")
 
@@ -94,6 +94,39 @@ with st.expander("Beginner's guide: how COT works and how to use this page"):
             st.markdown(f.read())
     except Exception:
         st.info("The guide file (guide.md) was not found. Upload guide.md next to app.py in GitHub.")
+
+with st.expander("Position size calculator: how many lots for my risk?"):
+    k1, k2, k3 = st.columns(3)
+    balance = k1.number_input("Account balance (USD)", min_value=1.0, value=2000.0, step=100.0)
+    risk_pct = k2.number_input("Risk per trade (%)", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+    pair_c = k3.selectbox("Pair", ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD"], key="calc_pair")
+    gold = pair_c == "XAU/USD"
+    k4, k5, k6 = st.columns(3)
+    stop = k4.number_input("Stop-loss distance (%s)" % ("USD price move" if gold else "pips"), min_value=0.1, value=40.0, step=1.0)
+    rr = k5.number_input("Reward-to-risk (2 = aim to win twice what you risk)", min_value=0.5, value=2.0, step=0.5)
+    price_c, contract = None, 100
+    if pair_c == "USD/JPY":
+        price_c = k6.number_input("Current USD/JPY price", min_value=1.0, value=158.0, step=0.1)
+    if gold:
+        contract = k6.number_input("Ounces per 1.00 lot (check your broker)", min_value=1, value=100, step=1)
+    r = position_size(balance, risk_pct, pair_c, stop, price_c, contract)
+    unit = "USD" if gold else "pips"
+    if risk_pct > 2:
+        st.warning("This is above the 2% per-trade limit your mentor teaches.")
+    if r["lots"] < 0.01:
+        st.error("Even the smallest size (0.01 lots) would risk about %.2f USD, more than your limit of %.2f USD. "
+                 "Use a tighter stop, a smaller risk, or a bigger account." % (r["min_lot_risk"], r["risk_amount"]))
+    else:
+        st.success("Trade size: %.2f lots" % r["lots"])
+        st.markdown(
+            "- Money you accept risking: **%.2f USD** (%.1f%% of the account)\n"
+            "- Real risk at this size, if the stop is hit: **%.2f USD**\n"
+            "- Target for a %.1f-to-1 reward: **%.1f %s** away, worth about **%.2f USD**\n"
+            "- Five losses in a row would take the account to about **%.0f USD**"
+            % (r["risk_amount"], risk_pct, r["actual_risk"], rr, stop * rr, unit, r["actual_risk"] * rr,
+               balance * (1 - risk_pct / 100.0) ** 5))
+    st.caption("A planning aid, not advice. Values assume an account in USD. Spread and fast markets can make a real loss "
+               "bigger than planned, and brokers differ slightly, so test it on your demo account first.")
 
 c1, c2, c3, c4, c5 = st.columns([3, 1.3, 1.6, 1.2, 0.8])
 group = c1.radio("Who are we looking at?", list(GROUPS), horizontal=True)
