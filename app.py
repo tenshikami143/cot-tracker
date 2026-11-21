@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 
 import pandas as pd
 import streamlit as st
@@ -12,7 +13,7 @@ st.set_page_config(page_title="COT Tracker", layout="wide")
 CSS = """
 <style>
 .stApp{background:#0e1a33}
-.stApp, .stApp label, .stApp p, .stApp h1, .stApp h3{color:#e6ecfa}
+.stApp, .stApp label, .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp li, .stApp td, .stApp th, .stApp strong{color:#e6ecfa}
 .cot-wrap{background:#142447;border:1px solid #233763;border-radius:12px;padding:6px 14px;overflow-x:auto}
 table.cot{border-collapse:collapse;width:100%;min-width:900px;font-variant-numeric:tabular-nums}
 table.cot th{color:#8fa2c8;font-size:12px;text-align:right;padding:12px 8px;border-bottom:1px solid #233763;letter-spacing:.06em}
@@ -86,6 +87,13 @@ def table_html(data):
 
 st.markdown(CSS, unsafe_allow_html=True)
 st.title("COT Tracker")
+
+with st.expander("Beginner's guide: how COT works and how to use this page"):
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "guide.md"), encoding="utf-8") as f:
+            st.markdown(f.read())
+    except Exception:
+        st.info("The guide file (guide.md) was not found. Upload guide.md next to app.py in GitHub.")
 
 c1, c2, c3, c4, c5 = st.columns([3, 1.3, 1.6, 1.2, 0.8])
 group = c1.radio("Who are we looking at?", list(GROUPS), horizontal=True)
