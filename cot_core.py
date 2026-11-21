@@ -120,12 +120,25 @@ LEAN_STRONG = 60  # gap needed for a "strong" lean
 
 
 def pair_lean(base, quote):
-    """base and quote are rows from summarise(). The lean compares where each currency sits in its own range."""
+    """base and quote are rows from summarise(). The lean compares where each currency sits in its own range.
+    It is only called "strong" when the net long/short direction of both currencies also supports it."""
     gap = base["idx"] - quote["idx"]
     lean = "BUY" if gap >= LEAN_MIN else "SELL" if gap <= -LEAN_MIN else "NONE"
-    strength = "strong" if abs(gap) >= LEAN_STRONG else "moderate"
+    notes, support = [], 0
+    if lean != "NONE":
+        ok = [base["net"] > 0, quote["net"] < 0] if lean == "BUY" else [base["net"] < 0, quote["net"] > 0]
+        support = sum(ok)
+        for o, good in zip((base, quote), ok):
+            if not good:
+                notes.append("%s is still net %s, so the %s lean is only partly supported."
+                             % (o["tick"], "long" if o["net"] > 0 else "short", lean.lower()))
+    if support == 2 and abs(gap) >= LEAN_STRONG:
+        strength = "strong"
+    elif support == 0:
+        strength = "weak"
+    else:
+        strength = "moderate"
     text = "NO CLEAR LEAN" if lean == "NONE" else "LEAN %s (%s)" % (lean, strength)
-    notes = []
     for o in (base, quote):
         label = signal(o["net"], o["idx"])[0]
         if label.startswith("EXTREME"):

@@ -120,7 +120,9 @@ for col, (pname, b, q) in zip(st.columns(len(PAIRS)), PAIRS):
         lean = pair_lean(by_tick[b], by_tick[q])
         cls = "bu" if lean["lean"] == "BUY" else "be" if lean["lean"] == "SELL" else "ex"
         html = '<div class="pc"><b>%s</b> <span class="tag %s">%s</span>' % (pname, cls, lean["text"])
-        html += '<div class="pn">%s index %d vs %s index %d</div>' % (b, by_tick[b]["idx"], q, by_tick[q]["idx"])
+        html += '<div class="pn">%s index %d (net %s) vs %s index %d (net %s)</div>' % (
+            b, by_tick[b]["idx"], "long" if by_tick[b]["net"] > 0 else "short",
+            q, by_tick[q]["idx"], "long" if by_tick[q]["net"] > 0 else "short")
         for n in lean["notes"]:
             html += '<div class="pn">Note: %s</div>' % n
         html += '<div class="pv">%s</div></div>' % verdict(lean, trend)
